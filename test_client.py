@@ -6,9 +6,9 @@ import numpy as np
 MAX_SPEED = 90
 MIN_SPEED = 30
 MAX_ANGLE = 25
-KP = 0.45     # He so ti le (Proportional)
-KI = 0.001   # He so tich phan (Integral)
-KD = 0.5     # He so dao ham (Derivative)
+KP = 0.32     # He so ti le (Proportional)
+KI = 0.0015   # He so tich phan (Integral)
+KD = 0.3     # He so dao ham (Derivative)
 SPEED_DECAY = 4
 Y_THRESHOLD = 95 # Toa do y toi thieu de phan tich anh
 NUM_SLICES = 15  # So lat cat ROI
