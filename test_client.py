@@ -3,13 +3,13 @@ import cv2
 import numpy as np
 
 # Cac hang so
-MAX_SPEED = 70
+MAX_SPEED = 90
 MIN_SPEED = 25
 MAX_ANGLE = 25
 KP0 = 0.32
 KI0 = 0.0015
 KD0 = 0.3
-SPEED_DECAY = 5
+SPEED_DECAY = 4
 Y_THRESHOLD = 92
 NUM_SLICES = 10
 
