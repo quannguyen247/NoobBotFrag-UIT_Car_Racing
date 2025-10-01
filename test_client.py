@@ -1,33 +1,32 @@
-from client_lib import GetStatus, GetRaw, GetSeg, AVControl, CloseSocket
+from client_lib import GetStatus, GetSeg, AVControl, CloseSocket
 import cv2
 import numpy as np
 
-# Cac hang so
+# Các hằng số
 MAX_SPEED = 90
 MIN_SPEED = 25
 MAX_ANGLE = 25
 KP0 = 0.32
 KI0 = 0.0015
 KD0 = 0.3
-SPEED_DECAY = 4
+SPEED_DECAY = 5.5
 Y_THRESHOLD = 92
 NUM_SLICES = 10
 
-# He so thich nghi
+# Hệ số thích nghi
 ALPHA = 0.01
 BETA = 0.02
 GAMMA = 0.01
-
-# He so lam tron PID (0.9 giu gia tri cu, 0.1 lay gia tri moi)
 SMOOTH = 0.9
-
-# Chống windup
 INTEGRAL_LIMIT = 1000
 
-# Khoi tao bien PID
+# Khoi tao PID
 integral_error = 0
 previous_deviation = 0
-Kp, Ki, Kd = KP0, KI0, KD0  # he so ban dau
+Kp, Ki, Kd = KP0, KI0, KD0
+
+# Khoảng cách cơ bản so với lề phải
+RIGHT_MARGIN_BASE = 20
 
 def create_binary_from_segment(segment_image):
     gray = cv2.cvtColor(segment_image, cv2.COLOR_BGR2GRAY)
@@ -40,15 +39,11 @@ if __name__ == "__main__":
             state = GetStatus()
             segment_image = GetSeg()
 
-            print(state)
-
-            # Tao anh binary
+            # Tạo ảnh binary và hiển thị
             binary_lane = create_binary_from_segment(segment_image)
-
             cv2.imshow('binary_lane', binary_lane)
 
             height, width = binary_lane.shape[:2]
-            car_center_x = width // 2
 
             y_positions = np.linspace(Y_THRESHOLD, height - 1, NUM_SLICES, dtype=int)
             lane_centers = []
@@ -65,25 +60,35 @@ if __name__ == "__main__":
 
                 if filtered:
                     xs = [c[1] for c in filtered]
-                    lane_center_x = int(np.mean(xs))
-                    deviation = lane_center_x - car_center_x
 
-                    # Tinh do cong
-                    if len(filtered) >= 3:
-                        ys = [c[0] for c in filtered]
-                        poly = np.polyfit(ys, xs, 2)
-                        curvature = abs(poly[0]) * 1e4
+                    # Tính car_ref_x động bám lane phải
+                    right_lane_xs = [x for x in xs if x > width // 2]
+                    if right_lane_xs:
+                        # Margin động dựa trên độ cong
+                        if len(filtered) >= 3:
+                            ys = [c[0] for c in filtered]
+                            poly = np.polyfit(ys, xs, 2)
+                            curvature = abs(poly[0]) * 1e4
+                        else:
+                            curvature = 0
+                        margin_dynamic = RIGHT_MARGIN_BASE + int(curvature * 0.2)
+                        car_ref_x = int(np.mean(right_lane_xs)) - margin_dynamic
+                        car_ref_x = max(car_ref_x, width // 2)
                     else:
+                        car_ref_x = width // 2
                         curvature = 0
 
-                    # He so PID adaptive
-                    v_state = state.get("speed", 30)
+                    lane_center_x = int(np.mean(xs))
+                    deviation = lane_center_x - car_ref_x
 
+                    # PID adaptive
+                    v_state = state.get("speed", 30)
                     target_Kp = KP0 / (1 + ALPHA * v_state) + min(0.001 * curvature, 0.05)
+                    # tăng Kp khi deviation lớn để quẹo nhanh
+                    target_Kp += min(abs(deviation) * 0.0015, 0.1)
                     target_Ki = KI0 / (1 + GAMMA * v_state)
                     target_Kd = KD0 * (1 + BETA * v_state)
 
-                    # Lam tron de tranh dao dong
                     Kp = SMOOTH * Kp + (1 - SMOOTH) * target_Kp
                     Ki = SMOOTH * Ki + (1 - SMOOTH) * target_Ki
                     Kd = SMOOTH * Kd + (1 - SMOOTH) * target_Kd
@@ -101,25 +106,28 @@ if __name__ == "__main__":
 
                     angle = np.clip(angle, -MAX_ANGLE, MAX_ANGLE)
 
-                    # Tinh toc do
-                    speed = MAX_SPEED - SPEED_DECAY * abs(angle)
-                    if curvature > 30:
-                        speed *= 0.6
+                    # Tối ưu tốc độ khi cua gấp
+                    base_speed = MAX_SPEED - SPEED_DECAY * abs(angle)
+                    if curvature > 30 or abs(angle) > MAX_ANGLE * 0.5:
+                        speed = base_speed * 0.5
+                    elif curvature > 15 or abs(angle) > MAX_ANGLE * 0.3:
+                        speed = base_speed * 0.7
+                    else:
+                        speed = base_speed
                     speed = np.clip(speed, MIN_SPEED, MAX_SPEED)
 
                 else:
-                    # Fallback mềm: giảm dần
+                    # Fallback mềm
                     angle *= 0.7
                     speed = MIN_SPEED
                     integral_error = 0
             else:
-                # Fallback mềm khi mất lane
+                # Fallback khi mất lane
                 angle *= 0.7
                 speed = MIN_SPEED
                 integral_error = 0
 
             AVControl(speed, angle)
-
             key = cv2.waitKey(1)
             if key == ord('q'):
                 break
@@ -127,7 +135,6 @@ if __name__ == "__main__":
     finally:
         print('closing socket')
         CloseSocket()
-
 
 
 
